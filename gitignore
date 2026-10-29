@@ -1,0 +1,15 @@
+# Secrets - never upload these
+apikey.txt
+*.key
+.env
+
+# Personal data and test files
+ledger.csv
+test_tts.wav
+test.m4a
+test.mp3
+test.wav
+
+# Python
+__pycache__/
+*.pyc
