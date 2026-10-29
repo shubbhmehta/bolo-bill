@@ -77,4 +77,4 @@ The **Type** tab works without a key. The **Voice** tab and the read-out buttons
 
 ## Author
 
-Shubh Mehta - BCA student
+Shubh Mehta
