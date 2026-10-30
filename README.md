@@ -6,7 +6,7 @@ Bolo Bill lets a small shopkeeper keep a daily ledger just by talking. Say a sen
 
 Built for the **Great Indian AI Internship Challenge by Gnani AI**.
 
-     ![Bolo Bill screenshot](Screenshot.png.png)
+   ![Bolo Bill screenshot](Screenshot.png.png)
 
 ## The problem
 
