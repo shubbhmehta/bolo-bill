@@ -11,6 +11,7 @@ The voice part needs GNANI_API_KEY. The typed part works without it.
 
 import os
 import tempfile
+import uuid
 
 import pandas as pd
 import streamlit as st
@@ -21,10 +22,50 @@ st.set_page_config(page_title="Bolo Bill", page_icon="🧾", layout="centered")
 st.title("🧾 Bolo Bill")
 st.caption("Boliye, hisaab apne aap likh jayega.  Speak or type your sale, kharcha or udhaar.")
 
+# ---------------- Online (public) mode ----------------
+# Set BOLO_PUBLIC=1 in the online app's Secrets. Then:
+#   - every visitor gets a private ledger (nobody sees anybody else's entries)
+#   - voice calls are limited, so strangers cannot use up the Gnani credits
+PUBLIC = os.getenv("BOLO_PUBLIC") == "1"
+DAILY_CAP = int(os.getenv("BOLO_DAILY_API_CAP", "150"))     # voice calls per day, all visitors
+SESSION_CAP = int(os.getenv("BOLO_SESSION_API_CAP", "20"))  # voice calls per visitor
+
+if PUBLIC:
+    if "visitor_id" not in st.session_state:
+        st.session_state.visitor_id = uuid.uuid4().hex[:12]
+    ledger.use_file(os.path.join(tempfile.gettempdir(), f"bolo_{st.session_state.visitor_id}.csv"))
+    st.info("Demo: your entries are private to you and are cleared when you close the page. "
+            "Voice calls are limited per visitor, typing is unlimited.")
+
+
+@st.cache_resource
+def _usage():
+    return {"day": "", "count": 0}
+
+
+def api_allowed():
+    """True if a Gnani voice call may be made now (only limited in online mode)."""
+    if not PUBLIC:
+        return True
+    usage = _usage()
+    today = ledger.now().strftime("%Y-%m-%d")
+    if usage["day"] != today:
+        usage["day"], usage["count"] = today, 0
+    if usage["count"] >= DAILY_CAP:
+        st.warning("Today's voice limit for this demo is finished. Typing still works - try again tomorrow.")
+        return False
+    if st.session_state.get("api_used", 0) >= SESSION_CAP:
+        st.warning("You have used the voice calls allowed for this demo session. Typing still works.")
+        return False
+    usage["count"] += 1
+    st.session_state["api_used"] = st.session_state.get("api_used", 0) + 1
+    return True
+
+
 
 def speak(text):
     """Read text out loud with Gnani Timbre (only if the API key is set)."""
-    if not os.getenv("GNANI_API_KEY"):
+    if not os.getenv("GNANI_API_KEY") or not api_allowed():
         return
     import bolo_tts  # imported here so the page works without the API file
 
@@ -88,12 +129,14 @@ with tab_voice:
                 tmp.write(source.getvalue())
                 path = tmp.name
             try:
-                with st.spinner("Listening..."):
-                    heard = bolo_stt.speech_to_text(path, style)
+                heard = None
+                if api_allowed():
+                    with st.spinner("Listening..."):
+                        heard = bolo_stt.speech_to_text(path, style)
+                    if not heard:
+                        st.warning("No speech heard. Please try again, closer to the mic.")
                 if heard:
                     save_if_ok(heard)
-                else:
-                    st.warning("No speech heard. Please try again, closer to the mic.")
             except SystemExit as e:        # bolo_stt reports errors with sys.exit(message)
                 st.error(str(e))
             finally:
@@ -109,6 +152,15 @@ with tab_text:
 # ---------------- Today's totals ----------------
 st.divider()
 entries = ledger.load_entries()
+if not entries:
+    st.caption("No entries yet. Add one above, or try ready-made sample entries:")
+    if st.button("Load sample entries"):
+        for sample in ["aaj paanch sau ka maal becha", "do hazaar ka maal becha",
+                       "teen sau ka saman kharida", "Ramesh ko do sau ka udhaar diya",
+                       "Suresh ko paanch sau ka udhaar diya"]:
+            sample_entry, _ = ledger.parse_sentence(sample)
+            ledger.add_entry(sample_entry)
+        st.rerun()
 sums = ledger.totals_for_today(entries)
 
 st.subheader("Aaj ka hisaab")
@@ -173,8 +225,8 @@ with r1:
     if os.getenv("GNANI_API_KEY") and st.button("🔊 Hafte ka hisaab sunao"):
         speak(week_text)
 with r2:
-    if os.path.exists(ledger.LEDGER_FILE):
-        with open(ledger.LEDGER_FILE, encoding="utf-8") as f:
+    if os.path.exists(ledger.current_file()):
+        with open(ledger.current_file(), encoding="utf-8") as f:
             csv_for_excel = f.read().encode("utf-8-sig")   # so Excel shows Hindi correctly
         st.download_button(
             "⬇️ Download ledger (Excel / CSV)",
@@ -192,3 +244,11 @@ if not os.getenv("GNANI_API_KEY"):
     st.caption("Reading out loud needs your Gnani API key (GNANI_API_KEY).")
 elif st.button("🔊 Suno hisaab (read it out)"):
     speak(summary)
+
+# ---------------- Start fresh ----------------
+with st.expander("⚙️ Settings"):
+    st.write("Delete **all** entries and start with an empty ledger (for a fresh demo).")
+    sure = st.checkbox("Yes, I want to delete everything")
+    if st.button("🗑️ Start fresh", disabled=not sure):
+        ledger.clear_all_entries()
+        st.rerun()

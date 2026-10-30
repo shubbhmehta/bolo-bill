@@ -13,9 +13,33 @@ Works with text from Gnani Prisma in either style:
 import csv
 import os
 import re
+import threading
 from datetime import datetime, timedelta
 
 LEDGER_FILE = "ledger.csv"
+
+# Each visitor of the online app gets a private ledger file. Streamlit runs each
+# visitor in its own thread, so the path is stored per thread (no mixing up).
+_local = threading.local()
+
+
+def now():
+    """Current time in India (the online server runs in UTC, so we fix the zone)."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("Asia/Kolkata"))
+    except Exception:           # no time-zone data: fall back to the computer's clock
+        return datetime.now()
+
+
+def use_file(path):
+    """Use this ledger file for the current visitor (current thread)."""
+    _local.path = path
+
+
+def current_file():
+    return getattr(_local, "path", None) or LEDGER_FILE
+
 FIELDS = ["time", "type", "amount", "text", "customer"]
 
 # ---------- Words that tell us what kind of entry it is ----------
@@ -181,13 +205,13 @@ def parse_sentence(text):
 # ---------- Saving and totals ----------
 def _upgrade_old_file():
     """Old ledger.csv files have no 'customer' column. Add it once."""
-    if not os.path.exists(LEDGER_FILE):
+    if not os.path.exists(current_file()):
         return
-    with open(LEDGER_FILE, newline="", encoding="utf-8") as f:
+    with open(current_file(), newline="", encoding="utf-8") as f:
         header = f.readline()
     if "customer" not in header:
         rows = load_entries()
-        with open(LEDGER_FILE, "w", newline="", encoding="utf-8") as f:
+        with open(current_file(), "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=FIELDS)
             writer.writeheader()
             for row in rows:
@@ -197,13 +221,13 @@ def _upgrade_old_file():
 def add_entry(entry):
     """Save one entry to ledger.csv."""
     _upgrade_old_file()
-    is_new = not os.path.exists(LEDGER_FILE)
-    with open(LEDGER_FILE, "a", newline="", encoding="utf-8") as f:
+    is_new = not os.path.exists(current_file())
+    with open(current_file(), "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDS)
         if is_new:
             writer.writeheader()
         writer.writerow({
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "time": now().strftime("%Y-%m-%d %H:%M:%S"),
             "type": entry["type"],
             "amount": entry["amount"],
             "text": entry["text"],
@@ -213,9 +237,9 @@ def add_entry(entry):
 
 def load_entries():
     """Read all entries (list of dicts). Empty list if no file yet."""
-    if not os.path.exists(LEDGER_FILE):
+    if not os.path.exists(current_file()):
         return []
-    with open(LEDGER_FILE, newline="", encoding="utf-8") as f:
+    with open(current_file(), newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     for row in rows:
         row["amount"] = float(row["amount"])
@@ -229,7 +253,7 @@ def delete_last_entry():
     if not rows:
         return False
     rows = rows[:-1]
-    with open(LEDGER_FILE, "w", newline="", encoding="utf-8") as f:
+    with open(current_file(), "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDS)
         writer.writeheader()
         for row in rows:
@@ -237,10 +261,16 @@ def delete_last_entry():
     return True
 
 
+def clear_all_entries():
+    """Delete every entry (start with an empty ledger)."""
+    if os.path.exists(LEDGER_FILE):
+        os.remove(LEDGER_FILE)
+
+
 def totals_for_today(entries=None):
     """Totals for today's date."""
     entries = load_entries() if entries is None else entries
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = now().strftime("%Y-%m-%d")
     sums = {"sale": 0, "expense": 0, "udhaar_diya": 0, "udhaar_wapas": 0}
     for e in entries:
         if e["time"].startswith(today) and e["type"] in sums:
@@ -278,7 +308,7 @@ def customer_balances(entries=None):
 def daily_totals(entries=None, days=7):
     """Totals for each of the last `days` days, oldest first."""
     entries = load_entries() if entries is None else entries
-    today = datetime.now().date()
+    today = now().date()
     rows = []
     for back in range(days - 1, -1, -1):
         day = (today - timedelta(days=back)).strftime("%Y-%m-%d")
