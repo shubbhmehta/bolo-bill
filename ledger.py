@@ -94,6 +94,9 @@ def find_type(text):
     """Return 'sale', 'expense', 'udhaar_diya', 'udhaar_wapas' or None."""
     if _has_any(text, UDHAAR_WORDS):
         return "udhaar_wapas" if _has_any(text, BACK_WORDS) else "udhaar_diya"
+    # "Ramesh ne paanch sau wapas kiye": a name plus "wapas" means money came back
+    if _has_any(text, ["wapas", "vapas", "वापस"]) and find_customer(text):
+        return "udhaar_wapas"
     if _has_any(text, SALE_WORDS):
         return "sale"
     if _has_any(text, EXPENSE_WORDS):
@@ -109,7 +112,12 @@ NOT_A_NAME = {
     "aaj", "आज", "kal", "कल", "abhi", "अभी", "phir", "fir", "फिर", "bhi", "भी",
     "maine", "mene", "मैंने", "humne", "hamne", "ka", "ki", "ke", "का", "की", "के",
     "rupaye", "rupay", "rs", "रुपये", "रुपए", "udhaar", "udhar", "उधार",
+    "saman", "samaan", "maal", "सामान", "माल", "diya", "kiya", "diye", "kiye",
+    "दिया", "किया", "दिये", "किये", "sirf", "bas", "total", "aur", "और", "hai", "है",
 }
+
+
+_TYPE_WORDS = {w.lower() for w in UDHAAR_WORDS + BACK_WORDS + SALE_WORDS + EXPENSE_WORDS}
 
 
 def find_customer(text):
@@ -122,7 +130,7 @@ def find_customer(text):
             while j >= 0 and len(name_words) < 2:
                 w = tokens[j]
                 lw = w.lower()
-                if (lw in NOT_A_NAME or lw in UNITS or lw in MULTIPLIERS
+                if (lw in NOT_A_NAME or lw in _TYPE_WORDS or lw in UNITS or lw in MULTIPLIERS
                         or lw in SPECIAL or re.search(r"\d", w)
                         or lw in NAME_MARKERS):
                     break
