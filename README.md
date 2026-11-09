@@ -8,6 +8,8 @@ Built for the **Great Indian AI Internship Challenge by Gnani AI**.
 
    ![Bolo Bill screenshot](Screenshot.png.png)
 
+   **Live demo:** https://bolo-bill-15.streamlit.app
+
 ## The problem
 
 Many shopkeepers keep their hisaab in a notebook, or in their head. Typing in an app is slow when your hands are busy, and most apps are in English. Udhaar (credit) is easy to forget. Bolo Bill makes the ledger a voice habit.
